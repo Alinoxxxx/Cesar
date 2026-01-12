@@ -2,7 +2,7 @@
 -- Keys:
 -- E = Toggle Aimbot
 -- P = Toggle ESP
--- M = PERMANENTLY DESTROY SCRIPT
+-- M + L = Toggle SCRIPT ON / OFF (NO DESTROY)
 
 ------------------------------------------------------------
 -- SERVICES
@@ -21,6 +21,7 @@ local Mouse = LocalPlayer:GetMouse()
 ------------------------------------------------------------
 -- SETTINGS
 ------------------------------------------------------------
+local ScriptEnabled = true
 local AimEnabled = false
 local ESPEnabled = true
 
@@ -30,7 +31,8 @@ local MaxFOV = 30
 
 local AIM_KEY = Enum.KeyCode.E
 local ESP_KEY = Enum.KeyCode.P
-local DESTROY_KEY = Enum.KeyCode.M
+local TOGGLE_KEY_1 = Enum.KeyCode.M
+local TOGGLE_KEY_2 = Enum.KeyCode.L
 
 local ESP_COLOR = Color3.fromRGB(255, 0, 0)
 local ESP_SIZE = UDim2.new(0, 60, 0, 14)
@@ -39,9 +41,9 @@ local ESP_UPDATE_INTERVAL = 0.15
 ------------------------------------------------------------
 -- STATE
 ------------------------------------------------------------
-local destroyed = false
 local espByPlayer = {}
 local activePlayers = {}
+local heldKeys = {}
 
 ------------------------------------------------------------
 -- ESP FUNCTIONS
@@ -55,7 +57,7 @@ local function removeESP(player)
 end
 
 local function createESP(player, character)
-	if destroyed or not character then return end
+	if not character then return end
 	local head = character:FindFirstChild("Head")
 	if not head then return end
 
@@ -67,7 +69,7 @@ local function createESP(player, character)
 	billboard.AlwaysOnTop = true
 	billboard.Size = ESP_SIZE
 	billboard.StudsOffset = Vector3.new(0, 2.1, 0)
-	billboard.Enabled = ESPEnabled
+	billboard.Enabled = ScriptEnabled and ESPEnabled
 	billboard.Parent = head
 
 	local text = Instance.new("TextLabel")
@@ -82,19 +84,17 @@ local function createESP(player, character)
 	espByPlayer[player] = {
 		billboard = billboard,
 		text = text,
-		head = head,
-		character = character
+		head = head
 	}
 end
 
 local function rebuildActivePlayers()
-	local t = {}
+	activePlayers = {}
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer then
-			t[#t + 1] = p
+			table.insert(activePlayers, p)
 		end
 	end
-	activePlayers = t
 end
 
 ------------------------------------------------------------
@@ -114,8 +114,7 @@ local function getClosestTarget()
 		rayParams.FilterDescendantsInstances = { LocalPlayer.Character }
 	end
 
-	for i = 1, #activePlayers do
-		local player = activePlayers[i]
+	for _, player in ipairs(activePlayers) do
 		local char = player.Character
 		if char then
 			local hum = char:FindFirstChildOfClass("Humanoid")
@@ -146,9 +145,7 @@ end
 rebuildActivePlayers()
 
 for _, p in ipairs(activePlayers) do
-	if p.Character then
-		createESP(p, p.Character)
-	end
+	if p.Character then createESP(p, p.Character) end
 	p.CharacterAdded:Connect(function(char)
 		createESP(p, char)
 	end)
@@ -167,10 +164,11 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 ------------------------------------------------------------
--- RENDER LOOP (AIMBOT)
+-- RENDER LOOP
 ------------------------------------------------------------
-local renderConn = RunService.RenderStepped:Connect(function()
-	if destroyed or not AimEnabled then return end
+RunService.RenderStepped:Connect(function()
+	if not ScriptEnabled or not AimEnabled then return end
+
 	local target = getClosestTarget()
 	if target then
 		local camPos = Camera.CFrame.Position
@@ -184,51 +182,39 @@ local renderConn = RunService.RenderStepped:Connect(function()
 end)
 
 ------------------------------------------------------------
--- ESP UPDATE LOOP (THROTTLED)
+-- ESP UPDATE LOOP
 ------------------------------------------------------------
-local espConn
-do
-	local acc = 0
-	espConn = RunService.Heartbeat:Connect(function(dt)
-		if destroyed then return end
-		acc += dt
-		if acc < ESP_UPDATE_INTERVAL then return end
-		acc = 0
+local acc = 0
+RunService.Heartbeat:Connect(function(dt)
+	if not ScriptEnabled then return end
+	acc += dt
+	if acc < ESP_UPDATE_INTERVAL then return end
+	acc = 0
 
-		local camPos = Camera.CFrame.Position
-		for _, player in ipairs(activePlayers) do
-			local info = espByPlayer[player]
-			if info and info.head and info.text then
-				if ESPEnabled then
-					local dist = math.floor((camPos - info.head.Position).Magnitude)
-					info.text.Text = player.DisplayName .. " (" .. dist .. "m)"
-					info.billboard.Enabled = true
-				else
-					info.billboard.Enabled = false
-				end
+	local camPos = Camera.CFrame.Position
+	for _, player in ipairs(activePlayers) do
+		local info = espByPlayer[player]
+		if info and info.head then
+			if ESPEnabled then
+				local dist = math.floor((camPos - info.head.Position).Magnitude)
+				info.text.Text = player.DisplayName .. " (" .. dist .. "m)"
+				info.billboard.Enabled = true
+			else
+				info.billboard.Enabled = false
 			end
 		end
-	end)
-end
+	end
+end)
 
 ------------------------------------------------------------
--- INPUT
+-- INPUT (M + L TOGGLE)
 ------------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gp)
-	if gp or destroyed then return end
+	if gp then return end
+	heldKeys[input.KeyCode] = true
 
-	if input.KeyCode == DESTROY_KEY then
-		destroyed = true
-
-		for p in pairs(espByPlayer) do
-			removeESP(p)
-		end
-
-		if renderConn then renderConn:Disconnect() end
-		if espConn then espConn:Disconnect() end
-
-		script:Destroy()
-		return
+	if heldKeys[TOGGLE_KEY_1] and heldKeys[TOGGLE_KEY_2] then
+		ScriptEnabled = not ScriptEnabled
 	end
 
 	if input.KeyCode == AIM_KEY then
@@ -236,6 +222,10 @@ UserInputService.InputBegan:Connect(function(input, gp)
 	elseif input.KeyCode == ESP_KEY then
 		ESPEnabled = not ESPEnabled
 	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	heldKeys[input.KeyCode] = nil
 end)
 
 ------------------------------------------------------------
