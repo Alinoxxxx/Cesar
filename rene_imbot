@@ -1,34 +1,32 @@
--- LUARMOR DUMPER SCRIPT
--- Execute this FIRST in your executor, then execute the Luarmor loader script.
+-- UNIVERSAL LUARMOR DUMPER SCRIPT
+-- Works on all executors (no hookfunction required)
 
 local folderName = "luarmor_dumps"
 pcall(makefolder, folderName)
 
 local dumpCounter = 0
 
--- Hook game:HttpGet to capture raw network payloads
-local oldHttpGet
-oldHttpGet = hookfunction(game.HttpGet, function(self, url, ...)
-    local response = oldHttpGet(self, url, ...)
-    dumpCounter = dumpCounter + 1
-    
-    local cleanUrl = url:gsub("[^%w%.%-]", "_"):sub(1, 60)
-    local filename = folderName .. "/http_dump_" .. tostring(dumpCounter) .. "_" .. cleanUrl .. ".lua"
-    
-    writefile(filename, response)
-    print("[Dumper] Saved HTTP response from: " .. url .. " to " .. filename)
-    return response
-end)
-
--- Hook loadstring to capture scripts compiled on-the-fly
+-- Hook loadstring by overriding the global variable
 local oldLoadstring
-oldLoadstring = hookfunction(loadstring, function(source, chunkname)
+oldLoadstring = loadstring
+
+loadstring = function(source, chunkname)
     dumpCounter = dumpCounter + 1
     local filename = folderName .. "/loadstring_dump_" .. tostring(dumpCounter) .. ".lua"
     
-    writefile(filename, source)
-    print("[Dumper] Intercepted compiled loadstring chunk! Saved to " .. filename)
+    -- Attempt to write file, fallback to console printing if writefile fails
+    local success, err = pcall(function()
+        writefile(filename, source)
+    end)
+    
+    if success then
+        print("[Dumper] Saved loadstring chunk to " .. filename)
+    else
+        warn("[Dumper] Failed to save file: " .. tostring(err))
+        print("[Dumper] Preview (first 500 chars):\n" .. string.sub(source, 1, 500))
+    end
+    
     return oldLoadstring(source, chunkname)
-end)
+end
 
-print("[Dumper] Hooked successfully! Now run your Luarmor loader script.")
+print("[Dumper] Hooked loadstring successfully! Now run your Luarmor loader.")
